@@ -1,4 +1,4 @@
-from typing import List, Tuple, Dict, Set
+from typing import List, Tuple, Dict, Iterable
 import math
 
 
@@ -54,19 +54,22 @@ assert INPUT_DATA.keys() == PRODUCTION_DATA.keys()
 
 
 def find_perfect_ratio(input_matrix: InputMatrixType, 
-                max_multiplier: int = 100, 
-                precision_error: float = 0) -> RatioMatrixType:
+                       max_multiplier: int = 100, 
+                       max_precision_error: float = 0) -> RatioMatrixType:
     # find float number of required assemblers
     ratio_matrix = [(name, number / output * time)
                     for name, number, time, output in input_matrix]
     # find minimum integer numbers of required assemblers
     for i in range(1, max_multiplier + 1):
-        # TODO: accumulate error
+        accumulated_error = 0
         for _, ratio in ratio_matrix:
             value = ratio * i
             if value % 1 == 0:
                 continue
-            if value < 1 or 1 - value % 1 > precision_error:
+            if value < 1:
+                break
+            accumulated_error += 1 - value % 1 
+            if accumulated_error > max_precision_error:
                 break
         else:
             return [(n, math.ceil(r * i)) for n, r in ratio_matrix]
@@ -74,22 +77,32 @@ def find_perfect_ratio(input_matrix: InputMatrixType,
 
 
 def find_required_ratio(end_product: str, ratio_matrix: RatioMatrixType, 
-                         required_output: float, assembler_speed: float):
-    ep_time, ep_output = PRODUCTION_DATA[end_product]
-    _, ep_assemblers = next(e for e in ratio_matrix if e[0] == end_product)
-    multiplier = round(1 / (ep_assemblers * ep_output / ep_time / required_output) / assembler_speed, 6)
+                        required_output: float, assembler_speed: float):
+    current_output = get_product_output(end_product, ratio_matrix, assembler_speed)
+    multiplier = round(required_output / current_output, 6)
     return [(n, math.ceil(r * multiplier)) for n, r in ratio_matrix]
 
 
-def create_input_matrix(end_product: str, base_components: Set[str] = None) -> InputMatrixType:
+def get_product_output(end_product: str, ratio_matrix: RatioMatrixType, 
+                       assembler_speed: float) -> float:
+    """ 
+    Returns output per second of the end product with the given assembler speed 
+    Disclaimer: Only works with the perfect ratio matrix
+    """
+    ep_time, ep_output = PRODUCTION_DATA[end_product]
+    ep_assemblers = next(a for n, a in ratio_matrix if n == end_product)
+    return ep_assemblers * ep_output / ep_time * assembler_speed
+
+
+def create_input_matrix(end_product: str, 
+                        base_components: Iterable[str] = None) -> InputMatrixType:
     add_to_matrix = [(end_product, 1)]
-    if base_components is None:
-        base_components = set()
-    temp_matrix = {}
+    base_components = set(base_components) if base_components else set()
+    temp_matrix_dict = {}
     while add_to_matrix:
         component, quantity = add_to_matrix.pop()
-        temp_matrix.setdefault(component, 0)
-        temp_matrix[component] += quantity
+        temp_matrix_dict.setdefault(component, 0)
+        temp_matrix_dict[component] += quantity
         if component in base_components: 
             continue
         if component not in INPUT_DATA:
@@ -101,10 +114,10 @@ def create_input_matrix(end_product: str, base_components: Set[str] = None) -> I
     # Print base components 
     print(f"Base components:")
     for component in base_components:
-        print(f"- {temp_matrix[component]} {component}(s)")
+        print(f"- {temp_matrix_dict[component]} {component}(s)")
     # Generate input matrix
     return [(component, quantity, *PRODUCTION_DATA[component])
-            for component, quantity in temp_matrix.items()
+            for component, quantity in temp_matrix_dict.items()
             if component not in base_components]
 
 
@@ -122,10 +135,12 @@ def print_ratio_matrix(matrix: RatioMatrixType, prefix: str = ""):
 def main():
     # Input
     end_product = "Roboport"
-    base_components = set(["Advanced circuit"])
-    print("\n\n==", end_product, "==")
+    base_components = []
+    assembler_speed = 0.75
+    required_output = 0.5  # per second 
 
     # Create input matrix
+    print("\n\n==", end_product, "==")
     input_matrix = create_input_matrix(end_product, base_components=base_components)
 
     # Find perfect ratio
@@ -133,17 +148,16 @@ def main():
     while True:
         try:
             perfect_ratio_matrix = find_perfect_ratio(
-                input_matrix, precision_error=precision_error)
+                input_matrix, max_precision_error=precision_error)
         except ValueError:
             precision_error += 0.01
             continue
         break
     print_ratio_matrix(perfect_ratio_matrix, prefix="Perfect")
-    print(f"Precision error: {precision_error:.2f}")
+    print(f"Precision error: ~{precision_error:.2f}")
+    print(f"Output: {get_product_output(end_product, perfect_ratio_matrix, assembler_speed)}/s")
 
     # Find required ratio
-    required_output = 1 / 30  # per second 
-    assembler_speed = 0.75
     required_ratio_matrix = find_required_ratio(end_product, perfect_ratio_matrix, 
                                                 required_output, assembler_speed)
     print_ratio_matrix(required_ratio_matrix, prefix="Required")
