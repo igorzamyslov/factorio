@@ -1,3 +1,4 @@
+from collections import defaultdict
 from typing import List, Tuple, Dict, Iterable
 import math
 
@@ -73,7 +74,7 @@ def find_perfect_ratio(input_matrix: InputMatrixType,
                 break
         else:
             return [(n, math.ceil(r * i)) for n, r in ratio_matrix]
-    raise ValueError("Not found")
+    raise ValueError(f"Not found for precision {max_precision_error}")
 
 
 def find_required_ratio(end_product: str, ratio_matrix: RatioMatrixType, 
@@ -96,8 +97,10 @@ def get_product_output(end_product: str, ratio_matrix: RatioMatrixType,
 
 def create_input_matrix(end_product: str, 
                         base_components: Iterable[str] = None) -> InputMatrixType:
-    add_to_matrix = [(end_product, 1)]
+    # Init base components
     base_components = set(base_components) if base_components else set()
+    # Create temporary matrix
+    add_to_matrix = [(end_product, 1)]
     temp_matrix_dict = {}
     while add_to_matrix:
         component, quantity = add_to_matrix.pop()
@@ -110,15 +113,24 @@ def create_input_matrix(end_product: str,
             continue
         _, produced = PRODUCTION_DATA[component]
         add_to_matrix.extend((c, q * quantity / produced) 
-                                for c, q in INPUT_DATA[component])
+                             for c, q in INPUT_DATA[component])
     # Print base components 
-    print(f"Base components:")
+    print(f"Base components per unit:")
     for component in base_components:
         print(f"- {temp_matrix_dict[component]} {component}(s)")
+    # Print requirements
+    print(f"\nInputs:")
+    for component in temp_matrix_dict:
+        if component in base_components:
+            continue
+        print(f"- {component}: ", end="")
+        print(", ".join(f"*{c}" if c in base_components else c
+                        for c, _ in INPUT_DATA[component]))
+
     # Generate input matrix
-    return [(component, quantity, *PRODUCTION_DATA[component])
-            for component, quantity in temp_matrix_dict.items()
-            if component not in base_components]
+    return [(c, q, *PRODUCTION_DATA[c])
+            for c, q in temp_matrix_dict.items()
+            if c not in base_components]
 
 
 def print_ratio_matrix(matrix: RatioMatrixType, prefix: str = ""):
@@ -135,9 +147,9 @@ def print_ratio_matrix(matrix: RatioMatrixType, prefix: str = ""):
 def main():
     # Input
     end_product = "Roboport"
-    base_components = []
+    base_components = ["Advanced circuit", "Concrete"]
     assembler_speed = 0.75
-    required_output = 0.5  # per second 
+    required_output = 1 / 120  # per second 
 
     # Create input matrix
     print("\n\n==", end_product, "==")
@@ -154,7 +166,7 @@ def main():
             continue
         break
     print_ratio_matrix(perfect_ratio_matrix, prefix="Perfect")
-    print(f"Precision error: ~{precision_error:.2f}")
+    print(f"Precision error: {precision_error:.2f}")
     print(f"Output: {get_product_output(end_product, perfect_ratio_matrix, assembler_speed)}/s")
 
     # Find required ratio
