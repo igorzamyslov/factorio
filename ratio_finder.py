@@ -16,10 +16,13 @@ PRODUCTION_DATA: Dict[str, Tuple[float, int]] = {
     "Assembling machine 2": (0.5, 1),
     "Burner assembling machine": (0.5, 1),
     "Concrete": (10, 10),
+    "Construction robot": (0.5, 1),
     "Copper cable": (0.5, 2),
+    "Electric engine unit": (10, 1),
     "Electric motor": (0.8, 1),
     "Electronic circuit": (0.5, 1),
     "Engine unit": (10, 1),
+    "Flying robot frame": (20, 1),
     "Iron gear wheel": (0.5, 1),
     "Iron stick": (0.5, 2),
     "Motor": (0.6, 1),
@@ -38,10 +41,13 @@ INPUT_DATA: Dict[str, List[Tuple[str, int]]] = {
     "Assembling machine 2": [("Electronic circuit", 2), ("Electric motor", 2), ("Assembling machine 1", 1), ("Steel plate", 2)],
     "Burner assembling machine": [("Motor", 1), ("Stone brick", 4), ("Iron plate", 8)],
     "Concrete": [("Water", 100), ("Sand", 10), ("Stone brick", 5), ("Iron stick", 2)],
+    "Construction robot": [("Electronic circuit", 2), ("Flying robot frame", 1)],
     "Copper cable": [("Copper plate", 1)],
+    "Electric engine unit": [("Electronic circuit", 1), ("Electric motor", 1), ("Engine unit", 1), ("Lubricant", 40)],
     "Electric motor": [("Copper cable", 6), ("Motor", 1)],
     "Electronic circuit": [("Copper cable", 3), ("Stone tablet", 1)],
     "Engine unit": [("Iron gear wheel", 2), ("Motor", 1), ("Pipe", 2), ("Steel plate", 2)],
+    "Flying robot frame": [("Electronic circuit", 4), ("Electric engine unit", 4), ("Battery", 4), ("Steel plate", 4)],
     "Iron gear wheel": [("Iron plate", 2)],
     "Iron stick": [("Iron plate", 1)],
     "Motor": [("Iron gear wheel", 1), ("Iron plate", 1)],
@@ -146,10 +152,10 @@ def print_ratio_matrix(matrix: RatioMatrixType, prefix: str = ""):
 
 def main():
     # Input
-    end_product = "Roboport"
-    base_components = ["Advanced circuit", "Concrete"]
+    end_product = "Construction robot"
+    base_components = ["Battery", "Electric engine unit"]
     assembler_speed = 0.75
-    required_output = 1 / 120  # per second 
+    required_output = 1 / 20  # per second 
 
     # Create input matrix
     print("\n\n==", end_product, "==")
@@ -167,12 +173,14 @@ def main():
         break
     print_ratio_matrix(perfect_ratio_matrix, prefix="Perfect")
     print(f"Precision error: {precision_error:.2f}")
-    print(f"Output: {get_product_output(end_product, perfect_ratio_matrix, assembler_speed)}/s")
+    output = get_product_output(end_product, perfect_ratio_matrix, assembler_speed)
+    print(f"Output: {output}/s ({output * 60}/m)")
 
     # Find required ratio
     required_ratio_matrix = find_required_ratio(end_product, perfect_ratio_matrix, 
                                                 required_output, assembler_speed)
     print_ratio_matrix(required_ratio_matrix, prefix="Required")
+    print(f"Output: ~{required_output}/s (~{required_output * 60}/m)")
 
 
 if __name__ == "__main__":
