@@ -1,17 +1,22 @@
-from collections import defaultdict
-from typing import List, Tuple, Dict, Iterable
+import json
+import os
 import math
+from typing import List, Tuple, Dict, Iterable
 
 
 # TODO: 
-# 1. Draw directed graph of inputs (visjs or python library)
-# 2. Move input to separate file
-# 3. Populate the input file automatically
-# 4. Update algorithm to be able to 
-#       - minimise either error OR number of assemblers
-#       - provide all possible combination of errors / assemblers
-# 5. Add docstrings + check with pylint
-# 6. Run the script via terminal with input
+# [ ] Draw directed graph of inputs (visjs or python library)
+# [x] Move input to separate file
+# [x] Populate the input file automatically
+# [ ] Update algorithm to be able to 
+#     [ ] minimise either error OR number of assemblers
+#     [ ] provide all possible combination of errors / assemblers
+#     [ ] use better algorithm to find equation solution
+# [ ] Add docstrings + check with pylint
+# [ ] Run the script via terminal with input
+# [ ] Handling items with multiple recipes 
+#     (right now first recipe is used or the one that has "priority: true" set)
+# [ ] Handling items with probability (right now skipped)
 
 
 InputMatrixType = List[Tuple[str, float, float, int]]
@@ -23,70 +28,40 @@ InputDataType = Dict[str, List[Tuple[str, int]]]
 # Provides the following info per craftable:
 # - time to produce
 # - number of items produces
-PRODUCTION_DATA: ProductionDataType = {
-    "Advanced circuit": (6, 1),
-    "Assembling machine 1": (0.5, 1),
-    "Assembling machine 2": (0.5, 1),
-    "Burner assembling machine": (0.5, 1),
-    "Concrete": (10, 10),
-    "Construction robot": (0.5, 1),
-    "Copper cable": (0.5, 2),
-    "Electric engine unit": (10, 1),
-    "Electric furnace": (5, 1),
-    "Electric motor": (0.8, 1),
-    "Electronic circuit": (0.5, 1),
-    "Engine unit": (10, 1),
-    "Flying robot frame": (20, 1),
-    "Heat shielding": (10, 1),
-    "Industrial furnace": (7, 1),
-    "Iron gear wheel": (0.5, 1),
-    "Iron plate": (3.2, 1),
-    "Iron stick": (0.5, 2),
-    "Motor": (0.6, 1),
-    "Pipe": (0.5, 1),
-    "Processing unit": (10, 1),
-    "Roboport": (5, 1),
-    "Sand": (0.5, 2),
-    "Steel furnace": (3, 1),
-    "Steel plate": (16, 1),
-    "Stone furnace": (0.5, 1),
-    "Stone tablet": (0.5, 4),
-} 
+PRODUCTION_DATA: ProductionDataType = {} 
 
 # Provides the list of inputs per craftable, containing:
 # - Name of the input
 # - Required quantity
-INPUT_DATA: InputDataType = {
-    "Advanced circuit": [("Copper cable", 4), ("Electronic circuit", 2), ("Plastic bar", 2)],
-    "Assembling machine 1": [("Iron gear wheel", 4), ("Electric motor", 1), ("Burner assembling machine", 1)],
-    "Assembling machine 2": [("Electronic circuit", 2), ("Electric motor", 2), ("Assembling machine 1", 1), ("Steel plate", 2)],
-    "Burner assembling machine": [("Motor", 1), ("Stone brick", 4), ("Iron plate", 8)],
-    "Concrete": [("Water", 100), ("Sand", 10), ("Stone brick", 5), ("Iron stick", 2)],
-    "Construction robot": [("Electronic circuit", 2), ("Flying robot frame", 1)],
-    "Copper cable": [("Copper plate", 1)],
-    "Electric engine unit": [("Electronic circuit", 1), ("Electric motor", 1), ("Engine unit", 1), ("Lubricant", 40)],
-    "Electric furnace": [("Steel furnace", 1), ("Advanced circuit", 5), ("Heat shielding", 2), ("Steel plate", 5)],
-    "Electric motor": [("Copper cable", 6), ("Motor", 1)],
-    "Electronic circuit": [("Copper cable", 3), ("Stone tablet", 1)],
-    "Engine unit": [("Iron gear wheel", 2), ("Motor", 1), ("Pipe", 2), ("Steel plate", 2)],
-    "Flying robot frame": [("Electronic circuit", 4), ("Electric engine unit", 4), ("Battery", 4), ("Steel plate", 4)],
-    "Heat shielding": [("Stone tablet", 20), ("Steel plate", 2), ("Sulfur", 8)],
-    "Industrial furnace": [("Electric furnace", 1), ("Concrete", 8), ("Steel plate", 16), ("Heat shielding", 4), ("Processing unit", 4)],
-    "Iron gear wheel": [("Iron plate", 2)],
-    "Iron plate": [("Iron ore", 1)],
-    "Iron stick": [("Iron plate", 1)],
-    "Motor": [("Iron gear wheel", 1), ("Iron plate", 1)],
-    "Pipe": [("Iron plate", 1)],
-    "Processing unit": [("Electronic circuit", 20), ("Advanced circuit", 2), ("Sulfuric acid", 5)],
-    "Roboport": [("Advanced circuit", 50), ("Electric motor", 50), ("Concrete", 50), ("Steel plate", 50)],
-    "Sand": [("Stone", 1)],
-    "Steel furnace": [("Stone furnace", 1), ("Stone brick", 6), ("Steel plate", 6)],
-    "Steel plate": [("Iron plate", 5)],
-    "Stone furnace": [("Stone", 5)],
-    "Stone tablet": [("Stone brick", 1)],
-}
+INPUT_DATA: InputDataType = {}
 
-assert INPUT_DATA.keys() == PRODUCTION_DATA.keys()
+
+def parse_recipes(filename: str = "aai-se-recipes.json") -> Tuple:
+    """ 
+    Parses the recipes file and initialises 
+    PRODUCTION_DATA and INPUT_DATA dictionaries.
+
+    Disclaimer: 
+        1. Skips the recipes with multiple outputs 
+           or outputs with probability other than 0.
+        2. Updates global dictionaries.
+    """
+
+    with open(os.path.join("recipes", filename), "r") as f:
+        data = json.load(f)
+    
+    for component_info in data.values():
+        if (len(component_info["products"]) != 1
+                or component_info["products"][0]["probability"] != 1):
+            continue
+        component = component_info["products"][0]["name"]
+        if component in PRODUCTION_DATA:
+            if not component_info.get("priority", False): 
+                continue
+        PRODUCTION_DATA[component] = (component_info["energy"], 
+                                      component_info["products"][0]["amount"])
+        INPUT_DATA[component] = [(i["name"], i["amount"]) 
+                                 for i in component_info["ingredients"]]
 
 
 def find_perfect_ratio(input_matrix: InputMatrixType, 
@@ -138,6 +113,7 @@ def create_input_matrix(end_product: str,
     add_to_matrix = [(end_product, 1)]
     temp_matrix_dict = {}
     while add_to_matrix:
+        print(add_to_matrix)
         component, quantity = add_to_matrix.pop()
         temp_matrix_dict.setdefault(component, 0)
         temp_matrix_dict[component] += quantity
@@ -151,8 +127,9 @@ def create_input_matrix(end_product: str,
                              for c, q in INPUT_DATA[component])
     # Print base components 
     print(f"Base components per unit:")
-    for component in base_components:
-        print(f"- {temp_matrix_dict[component]} {component}(s)")
+    for component in temp_matrix_dict:
+        if component in base_components:
+            print(f"- {temp_matrix_dict[component]} {component}(s)")
 
     # Print requirements
     print(f"\nInputs:")
@@ -186,9 +163,20 @@ def print_ratio_matrix(matrix: RatioMatrixType, prefix: str = ""):
     
 
 def main():
+    parse_recipes()
+
     # Input
-    end_product = "Steel plate"
-    base_components = []
+    end_product = "electric-furnace"
+    base_components = [
+        # fluid
+        "water", "sulfuric-acid",
+        # chips
+        "advanced-circuit", "processing-unit",
+        # smelted
+        "steel-plate", "iron-plate", "stone-brick", "copper-plate",
+        # other
+        "sulfur", "plastic-bar", "concrete",
+    ]
     assembler_speed = 3
     required_output = 30 / 1  # per second 
 
