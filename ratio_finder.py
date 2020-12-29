@@ -3,14 +3,27 @@ from typing import List, Tuple, Dict, Iterable
 import math
 
 
+# TODO: 
+# 1. Draw directed graph of inputs (visjs or python library)
+# 2. Move input to separate file
+# 3. Populate the input file automatically
+# 4. Update algorithm to be able to 
+#       - minimise either error OR number of assemblers
+#       - provide all possible combination of errors / assemblers
+# 5. Add docstrings + check with pylint
+# 6. Run the script via terminal with input
+
+
 InputMatrixType = List[Tuple[str, float, float, int]]
 RatioMatrixType = List[Tuple[str, int]]
+ProductionDataType = Dict[str, Tuple[float, int]] 
+InputDataType = Dict[str, List[Tuple[str, int]]] 
 
 
 # Provides the following info per craftable:
 # - time to produce
 # - number of items produces
-PRODUCTION_DATA: Dict[str, Tuple[float, int]] = {
+PRODUCTION_DATA: ProductionDataType = {
     "Advanced circuit": (6, 1),
     "Assembling machine 1": (0.5, 1),
     "Assembling machine 2": (0.5, 1),
@@ -19,23 +32,31 @@ PRODUCTION_DATA: Dict[str, Tuple[float, int]] = {
     "Construction robot": (0.5, 1),
     "Copper cable": (0.5, 2),
     "Electric engine unit": (10, 1),
+    "Electric furnace": (5, 1),
     "Electric motor": (0.8, 1),
     "Electronic circuit": (0.5, 1),
     "Engine unit": (10, 1),
     "Flying robot frame": (20, 1),
+    "Heat shielding": (10, 1),
+    "Industrial furnace": (7, 1),
     "Iron gear wheel": (0.5, 1),
+    "Iron plate": (3.2, 1),
     "Iron stick": (0.5, 2),
     "Motor": (0.6, 1),
     "Pipe": (0.5, 1),
+    "Processing unit": (10, 1),
     "Roboport": (5, 1),
     "Sand": (0.5, 2),
+    "Steel furnace": (3, 1),
+    "Steel plate": (16, 1),
+    "Stone furnace": (0.5, 1),
     "Stone tablet": (0.5, 4),
 } 
 
 # Provides the list of inputs per craftable, containing:
 # - Name of the input
 # - Required quantity
-INPUT_DATA: Dict[str, List[Tuple[str, int]]] = {
+INPUT_DATA: InputDataType = {
     "Advanced circuit": [("Copper cable", 4), ("Electronic circuit", 2), ("Plastic bar", 2)],
     "Assembling machine 1": [("Iron gear wheel", 4), ("Electric motor", 1), ("Burner assembling machine", 1)],
     "Assembling machine 2": [("Electronic circuit", 2), ("Electric motor", 2), ("Assembling machine 1", 1), ("Steel plate", 2)],
@@ -44,16 +65,24 @@ INPUT_DATA: Dict[str, List[Tuple[str, int]]] = {
     "Construction robot": [("Electronic circuit", 2), ("Flying robot frame", 1)],
     "Copper cable": [("Copper plate", 1)],
     "Electric engine unit": [("Electronic circuit", 1), ("Electric motor", 1), ("Engine unit", 1), ("Lubricant", 40)],
+    "Electric furnace": [("Steel furnace", 1), ("Advanced circuit", 5), ("Heat shielding", 2), ("Steel plate", 5)],
     "Electric motor": [("Copper cable", 6), ("Motor", 1)],
     "Electronic circuit": [("Copper cable", 3), ("Stone tablet", 1)],
     "Engine unit": [("Iron gear wheel", 2), ("Motor", 1), ("Pipe", 2), ("Steel plate", 2)],
     "Flying robot frame": [("Electronic circuit", 4), ("Electric engine unit", 4), ("Battery", 4), ("Steel plate", 4)],
+    "Heat shielding": [("Stone tablet", 20), ("Steel plate", 2), ("Sulfur", 8)],
+    "Industrial furnace": [("Electric furnace", 1), ("Concrete", 8), ("Steel plate", 16), ("Heat shielding", 4), ("Processing unit", 4)],
     "Iron gear wheel": [("Iron plate", 2)],
+    "Iron plate": [("Iron ore", 1)],
     "Iron stick": [("Iron plate", 1)],
     "Motor": [("Iron gear wheel", 1), ("Iron plate", 1)],
     "Pipe": [("Iron plate", 1)],
+    "Processing unit": [("Electronic circuit", 20), ("Advanced circuit", 2), ("Sulfuric acid", 5)],
     "Roboport": [("Advanced circuit", 50), ("Electric motor", 50), ("Concrete", 50), ("Steel plate", 50)],
     "Sand": [("Stone", 1)],
+    "Steel furnace": [("Stone furnace", 1), ("Stone brick", 6), ("Steel plate", 6)],
+    "Steel plate": [("Iron plate", 5)],
+    "Stone furnace": [("Stone", 5)],
     "Stone tablet": [("Stone brick", 1)],
 }
 
@@ -124,14 +153,20 @@ def create_input_matrix(end_product: str,
     print(f"Base components per unit:")
     for component in base_components:
         print(f"- {temp_matrix_dict[component]} {component}(s)")
+
     # Print requirements
     print(f"\nInputs:")
-    for component in temp_matrix_dict:
-        if component in base_components:
+    for i, component in enumerate(sorted(temp_matrix_dict.keys(), 
+                                         key=lambda x: x not in base_components)):
+        if component == end_product:
             continue
-        print(f"- {component}: ", end="")
-        print(", ".join(f"*{c}" if c in base_components else c
-                        for c, _ in INPUT_DATA[component]))
+        prefix = "*" if component in base_components else ""
+        print(f"  {i+1:2d}. {prefix}{component}:")
+        for built_component in temp_matrix_dict:
+            if built_component in base_components:
+                continue
+            if component in (c for c, _ in INPUT_DATA[built_component]):
+                print(f"      -> {built_component}")
 
     # Generate input matrix
     return [(c, q, *PRODUCTION_DATA[c])
@@ -152,10 +187,10 @@ def print_ratio_matrix(matrix: RatioMatrixType, prefix: str = ""):
 
 def main():
     # Input
-    end_product = "Construction robot"
-    base_components = ["Battery", "Electric engine unit"]
-    assembler_speed = 0.75
-    required_output = 1 / 20  # per second 
+    end_product = "Steel plate"
+    base_components = []
+    assembler_speed = 3
+    required_output = 30 / 1  # per second 
 
     # Create input matrix
     print("\n\n==", end_product, "==")
