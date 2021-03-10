@@ -1,5 +1,8 @@
 #!/bin/python3
-""" Module for calculation the number solar panels / accumulators """
+""" 
+Script that allows to calculate the required number of 
+the solar panels / accumulators needed to sustain certain power.
+"""
 import math
 
 from typing import Dict, Union
