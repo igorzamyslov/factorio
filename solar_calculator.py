@@ -13,7 +13,7 @@ MULTIPLIER: Dict[str, Number] = {
 }
 
 
-def convert_str_to_int(string: str) -> Union[float, int]:
+def convert_str_to_int(string: str) -> Number:
     """
     Converts a string with multiplier to a number
     Example: 100k -> 100000
