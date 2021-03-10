@@ -38,7 +38,7 @@ def main():
                         help="Solar efficiency (%%) on the given planet")
     parser.add_argument("accumulator_capacity", type=int,
                         help="Capacity of one accumulator (J)")
-    parser.add_argument("day_night_cycle", type=int,
+    parser.add_argument("day_night_cycle", type=float,
                         help="Day/night cycle (minutes)")
     args = parser.parse_args()
 
