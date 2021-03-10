@@ -71,7 +71,7 @@ def main():
     parser.add_argument("solar_efficiency", type=float,
                         help="Solar efficiency (%%) on the given planet.")
     parser.add_argument("accumulator_capacity", type=str,
-                        help="Capacity of one accumulator (J). Supports multipliers.")
+                        help="Capacity (J) of the used accumulators. Supports multipliers.")
     parser.add_argument("day_night_cycle", type=float,
                         help="Day/night cycle (minutes).")
     args = parser.parse_args()
