@@ -1,6 +1,4 @@
 #!/bin/python3
-import argparse
-
 def calculate_solar_panels(power: int, solar_output: int, 
                            solar_efficiency: int):
     """
