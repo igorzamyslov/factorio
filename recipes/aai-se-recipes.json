@@ -16979,6 +16979,7 @@
         "order": "r[resource]p[powder]-f"
     },
     "se-iron-smelting-vulcanite": {
+        "priority": true,
         "name": "se-iron-smelting-vulcanite",
         "category": "smelting",
         "products": [

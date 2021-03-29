@@ -88,21 +88,25 @@ def find_perfect_ratio(input_matrix: InputMatrixType,
 
 
 def find_required_ratio(end_product: str, ratio_matrix: RatioMatrixType, 
-                        required_output: float, assembler_speed: float):
-    current_output = get_product_output(end_product, ratio_matrix, assembler_speed)
+                        required_output: float, assembler_speed: float,
+                        efficiency: float):
+    current_output = get_product_output(end_product, ratio_matrix, 
+                                        assembler_speed, efficiency)
     multiplier = round(required_output / current_output, 6)
     return [(n, math.ceil(r * multiplier)) for n, r in ratio_matrix]
 
 
 def get_product_output(end_product: str, ratio_matrix: RatioMatrixType, 
-                       assembler_speed: float) -> float:
+                       assembler_speed: float, efficiency: float) -> float:
     """ 
     Returns output per second of the end product with the given assembler speed 
     Disclaimer: Only works with the perfect ratio matrix
     """
     ep_time, ep_output = PRODUCTION_DATA[end_product]
     ep_assemblers = next(a for n, a in ratio_matrix if n == end_product)
-    return ep_assemblers * ep_output / ep_time * assembler_speed
+    output_per_second = ep_assemblers * ep_output / ep_time * assembler_speed
+    # return output per second considering the efficiency
+    return output_per_second + output_per_second * efficiency / 100
 
 
 def create_input_matrix(end_product: str, 
@@ -113,7 +117,6 @@ def create_input_matrix(end_product: str,
     add_to_matrix = [(end_product, 1)]
     temp_matrix_dict = {}
     while add_to_matrix:
-        print(add_to_matrix)
         component, quantity = add_to_matrix.pop()
         temp_matrix_dict.setdefault(component, 0)
         temp_matrix_dict[component] += quantity
@@ -166,19 +169,21 @@ def main():
     parse_recipes()
 
     # Input
-    end_product = "electric-furnace"
+    end_product = "steel-plate"
     base_components = [
         # fluid
         "water", "sulfuric-acid",
         # chips
         "advanced-circuit", "processing-unit",
         # smelted
-        "steel-plate", "iron-plate", "stone-brick", "copper-plate",
+        "iron-plate", "stone-brick", "copper-plate",
+        # "steel-plate", "iron-plate", "stone-brick", "copper-plate",
         # other
         "sulfur", "plastic-bar", "concrete",
     ]
-    assembler_speed = 3
-    required_output = 30 / 1  # per second 
+    assembler_speed = 12
+    efficiency = 40  # %
+    required_output = 100.8 / 1  # per second 
 
     # Create input matrix
     print("\n\n==", end_product, "==")
@@ -196,14 +201,18 @@ def main():
         break
     print_ratio_matrix(perfect_ratio_matrix, prefix="Perfect")
     print(f"Precision error: {precision_error:.2f}")
-    output = get_product_output(end_product, perfect_ratio_matrix, assembler_speed)
+    output = get_product_output(end_product, perfect_ratio_matrix, assembler_speed, 0)
     print(f"Output: {output}/s ({output * 60}/m)")
+    output = get_product_output(end_product, perfect_ratio_matrix, assembler_speed, efficiency)
+    print(f"Output (+efficiency): {output}/s ({output * 60}/m)")
 
     # Find required ratio
     required_ratio_matrix = find_required_ratio(end_product, perfect_ratio_matrix, 
-                                                required_output, assembler_speed)
+                                                required_output, assembler_speed,
+                                                efficiency)
     print_ratio_matrix(required_ratio_matrix, prefix="Required")
     print(f"Output: ~{required_output}/s (~{required_output * 60}/m)")
+    print(f"Output (-efficiency): ~{required_output / (1 + efficiency / 100)}/s")
 
 
 if __name__ == "__main__":
