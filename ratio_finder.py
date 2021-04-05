@@ -110,23 +110,25 @@ def get_product_output(end_product: str, ratio_matrix: RatioMatrixType,
 
 
 def create_input_matrix(end_product: str, 
-                        base_components: Iterable[str] = None) -> InputMatrixType:
+                        efficiency: float,
+                        base_components: Iterable[str] = None,
+                        ) -> InputMatrixType:
     # Init base components
     base_components = set(base_components) if base_components else set()
     # Create temporary matrix
+    efficiency_ratio = 1 + efficiency / 100
     add_to_matrix = [(end_product, 1)]
     temp_matrix_dict = {}
     while add_to_matrix:
         component, quantity = add_to_matrix.pop()
         temp_matrix_dict.setdefault(component, 0)
         temp_matrix_dict[component] += quantity
-        if component in base_components: 
-            continue
         if component not in INPUT_DATA:
             base_components.add(component)
+        if component in base_components: 
             continue
         _, produced = PRODUCTION_DATA[component]
-        add_to_matrix.extend((c, q * quantity / produced) 
+        add_to_matrix.extend((c, q * quantity / produced / efficiency_ratio)
                              for c, q in INPUT_DATA[component])
     # Print base components 
     print(f"Base components per unit:")
@@ -169,32 +171,36 @@ def main():
     parse_recipes()
 
     # Input
-    end_product = "steel-plate"
+    end_product = "electronic-circuit"
     base_components = [
         # fluid
         "water", "sulfuric-acid",
         # chips
-        "advanced-circuit", "processing-unit",
+        # "electronic-circuit", 
+        # "advanced-circuit", 
+        # "processing-unit",
         # smelted
         "iron-plate", "stone-brick", "copper-plate",
         # "steel-plate", "iron-plate", "stone-brick", "copper-plate",
         # other
         "sulfur", "plastic-bar", "concrete",
     ]
-    assembler_speed = 12
-    efficiency = 40  # %
-    required_output = 100.8 / 1  # per second 
+    assembler_speed = 3.5
+    efficiency = 48  # %
+    required_output = 45 / 1  # per second 
 
     # Create input matrix
     print("\n\n==", end_product, "==")
-    input_matrix = create_input_matrix(end_product, base_components=base_components)
+    input_matrix = create_input_matrix(end_product, efficiency, 
+                                       base_components=base_components)
 
     # Find perfect ratio
     precision_error = 0
     while True:
         try:
             perfect_ratio_matrix = find_perfect_ratio(
-                input_matrix, max_precision_error=precision_error)
+                input_matrix, 
+                max_precision_error=precision_error)
         except ValueError:
             precision_error += 0.01
             continue
