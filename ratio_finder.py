@@ -10,13 +10,12 @@ from typing import Dict, Iterable, List, Tuple
 # [x] Move input to separate file
 # [x] Populate the input file automatically
 # [x] Handling items with multiple recipes (asking user to choose)
-# [ ] Make a better user-interface
+# [ ] Make a better user-interface (run the script via user input)
 # [ ] Update algorithm to be able to
 #     [ ] minimise either error OR number of assemblers
 #     [ ] provide all possible combinations of assemblers
 #     [ ] use better algorithm to find equation solution
 # [ ] Add docstrings + check with pylint
-# [ ] Run the script via terminal with input
 # [ ] Handling items with probability (right now skipped)
 # [ ] Draw directed graph of inputs (visjs or python library)
 
