@@ -1,34 +1,97 @@
 #!/usr/bin/env python3
 """ Script to calculate the perfect/near-perfect ratios for different recipes """
+from __future__ import annotations
+
 import json
 import math
 import os
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Tuple
+from functools import lru_cache
+from itertools import groupby
+from typing import Dict, List, Optional, Set, Tuple
 
 # TODO:
 # [x] Move input to separate file
 # [x] Populate the input file automatically
 # [x] Handling items with multiple recipes (asking user to choose)
 # [ ] Make a better user-interface (run the script via user input)
+# [ ] Add docstrings + check with pylint
+# [ ] Handle different assemblers with their own efficiency / speed
 # [ ] Update algorithm to be able to
 #     [ ] minimise either error OR number of assemblers
 #     [ ] provide all possible combinations of assemblers
 #     [ ] use better algorithm to find equation solution
-# [ ] Add docstrings + check with pylint
 # [ ] Handling items with probability (right now skipped)
 # [ ] Draw directed graph of inputs (visjs or python library)
 
 
-InputMatrixType = List[Tuple[str, float, float, int]]
-RatioMatrixType = List[Tuple[str, int]]
+# Globally available data
+_INPUT_COMPONENTS: Set[Component] = set()  # Components that are given as input
+_RECIPES: Dict[Component, List[Recipe]] = {}  # Recipes grouped by their name
+
+
+@dataclass(frozen=True)
+class Component:
+    """ Simple class for a single component, containing useful methods """
+    name: str
+
+    def __lt__(self, other):
+        return self.name < other.name
+
+    @property
+    def recipe(self) -> Optional[Recipe]:
+        """ Component's recipe """
+        return self._choose_recipe()
+
+    @property
+    def is_base_input(self) -> bool:
+        """
+        Checks whether a component is given as input:
+        - Either it is a base component (which doesn't have its own recipe)
+        - Or the component is marked as input-component
+        """
+        return self in _INPUT_COMPONENTS or self.recipe is None
+
+    @lru_cache(maxsize=None)
+    def _choose_recipe(self) -> Optional[Recipe]:
+        """ Propose user to select a recipe for the given component """
+        # Check if recipe for the component exists
+        if self not in _RECIPES:
+            return None
+
+        component_recipes = _RECIPES[self]
+        # Check if there's only one recipe
+        if len(component_recipes) == 1:
+            [chosen_recipe] = component_recipes
+            return chosen_recipe
+
+        # Ask the user otherwise
+        print(f"\nChoose which recipe to use to craft \"{self.name}\":")
+        for i, recipe in enumerate(component_recipes):
+            print(f"{i + 1}. {recipe.name}")
+        while True:
+            try:
+                recipe_to_use = int(input("Recipe to use: "))
+                if recipe_to_use < 1 or recipe_to_use > len(component_recipes):
+                    raise ValueError
+            except (TypeError, ValueError):
+                print(f"Please enter a number between 1 and {len(component_recipes)}")
+                continue
+            else:
+                return component_recipes[recipe_to_use - 1]
+
+    @classmethod
+    @lru_cache(maxsize=None)
+    def from_name(cls, name: str) -> Component:
+        """ Create singleton-instance from the name """
+        return cls(name=name)
 
 
 @dataclass
 class Input:
     """ Information about the input required by a recipe """
-    component: str
-    quantity: int
+    component: Component
+    quantity: float
 
 
 @dataclass
@@ -41,24 +104,21 @@ class Recipe:
     - required inputs with their required quantities
     """
     name: str  # name of the recipe
-    component: str  # name of the output component
+    component: Component  # name of the output component
     time: float  # seconds
     quantity: int
     inputs: List[Input]
 
 
-RECIPES: Dict[str, List[Recipe]] = {}  # Recipes grouped by their name
-CHOSEN_RECIPES: Dict[str, Recipe] = {}  # Recipes that were already chosen by the user
+AssemblersRatios = Dict[Component, float]  # type for "component to number of assemblers" dictionary
 
 
 def parse_recipes(filename: str = "aai-se-recipes.json"):
     """
-    Parses the recipes file and initialises
-    PRODUCTION_DATA and INPUT_DATA dictionaries.
+    Parses the recipes file and initialises the RECIPES and BASE_COMPONENTS dictionaries.
 
     Disclaimer:
-        1. Skips the recipes with multiple outputs
-           or outputs with probability other than 0.
+        1. Skips the recipes with multiple outputs or outputs with probability other than 0.
         2. Updates global dictionaries.
     """
 
@@ -76,50 +136,75 @@ def parse_recipes(filename: str = "aai-se-recipes.json"):
 
         recipe = Recipe(name=recipe_data["name"],
                         time=recipe_data["energy"],
-                        component=component_data["name"],
+                        component=Component.from_name(component_data["name"]),
                         quantity=component_data["amount"],
-                        inputs=[Input(component=i["name"], quantity=i["amount"])
+                        inputs=[Input(component=Component.from_name(i["name"]),
+                                      quantity=i["amount"])
                                 for i in recipe_data["ingredients"]])
-        RECIPES.setdefault(recipe.component, []).append(recipe)
+        _RECIPES.setdefault(recipe.component, []).append(recipe)
 
 
-def choose_recipe(component: str) -> Recipe:
-    """ Propose user to select a recipe for the given component """
-    # Check if was already chosen
-    if component in CHOSEN_RECIPES:
-        return CHOSEN_RECIPES[component]
+def calculate_intermediate_inputs(end_product: Component) -> List[Input]:
+    """ Calculates intermediate inputs for 1 unit of end product """
+    queue = []
 
-    component_recipes = RECIPES[component]
-    # Check if there's only one recept
-    if len(component_recipes) == 1:
-        [chosen_recipe] = component_recipes
-        CHOSEN_RECIPES[component] = chosen_recipe
-        return chosen_recipe
+    def _extend_queue(main_input: Input):
+        """ Extend queue with sub-inputs of the given input """
+        main_component = main_input.component
+        if not main_component.is_base_input:
+            for sub_input in main_component.recipe.inputs:
+                quantity = main_input.quantity / main_component.recipe.quantity * sub_input.quantity
+                queue.append(Input(component=sub_input.component, quantity=quantity))
 
-    # Ask the user otherwise
-    print(f"\nChoose which recipe to use to craft \"{component}\":")
-    for i, recipe in enumerate(component_recipes):
-        print(f"{i + 1}. {recipe.name}")
-    while True:
-        try:
-            recipe_to_use = int(input("Recipe to use: "))
-            if recipe_to_use < 1 or recipe_to_use > len(component_recipes):
-                raise ValueError
-        except (TypeError, ValueError):
-            print(f"Please enter a number between 1 and {len(component_recipes)}")
-            continue
-        else:
-            chosen_recipe = component_recipes[recipe_to_use - 1]
-            CHOSEN_RECIPES[component] = chosen_recipe
-            return chosen_recipe
+    _extend_queue(Input(component=end_product, quantity=1))
+    inputs = []
+    while queue:
+        input_ = queue.pop()
+        inputs.append(input_)
+        _extend_queue(input_)
+
+    # group and sum all inputs
+    def group_func(element: Input) -> Component:
+        """ Grouping function (group by component) """
+        return element.component
+
+    grouped_inputs = []
+    for component, group in groupby(sorted(inputs, key=group_func), key=group_func):
+        grouped_inputs.append(Input(component=component,
+                                    quantity=sum(i.quantity for i in group)))
+    return grouped_inputs
 
 
-def find_perfect_ratio(input_matrix: InputMatrixType,
+def print_inputs(inputs: List[Input]):
+    """ Print inputs """
+    # Print base components
+    print(f"\nBase components per unit:")
+    for input_ in inputs:
+        if input_.component.is_base_input:
+            print(f"- {input_.quantity:.2f} {input_.component.name}")
+
+    # Print inputs
+    print(f"\nInputs:")
+    for i, input_ in enumerate(sorted(inputs, key=lambda i: not i.component.is_base_input)):
+        prefix = "*" if input_.component.is_base_input else ""
+        print(f"  {i + 1:2d}. {prefix}{input_.component.name}:")
+        for built_input in inputs:
+            if built_input.component.is_base_input:
+                continue
+            if any(i.component == input_.component for i in built_input.component.recipe.inputs):
+                print(f"      -> {built_input.component.name}")
+
+
+def find_perfect_ratio(required_outputs: RequiredOutputs,
                        max_multiplier: int,
-                       max_precision_error: float = 0) -> RatioMatrixType:
+                       max_precision_error: float = 0) -> AssemblersRatios:
     # find float number of required assemblers
     ratio_matrix = [(name, number / output * time)
-                    for name, number, time, output in input_matrix]
+                    for name, number, time, output in required_outputs]
+    float_assemblers_ratios = {}
+    for component, quantity in required_outputs:
+        recipe = choose_recipe(component)
+
     # find minimum integer numbers of required assemblers
     for i in range(1, max_multiplier + 1):
         accumulated_error = 0
@@ -180,60 +265,6 @@ def get_product_output(component: str, ratio_matrix: RatioMatrixType,
     return output_per_second + output_per_second * efficiency / 100
 
 
-def create_input_matrix(end_product: str,
-                        efficiency: float,
-                        base_components: Iterable[str] = None,
-                        ) -> InputMatrixType:
-    """ Create input matrix for 1 unit of end product """
-    # Init base components
-    base_components = set(base_components) if base_components else set()
-    # Create temporary matrix
-    efficiency_ratio = 1 + efficiency / 100
-    add_to_matrix = [(end_product, 1)]
-    temp_matrix_dict = {}
-    while add_to_matrix:
-        component, quantity = add_to_matrix.pop()
-        temp_matrix_dict.setdefault(component, 0)
-        temp_matrix_dict[component] += quantity
-        if component not in RECIPES:
-            base_components.add(component)
-        if component in base_components:
-            continue
-        recipe = choose_recipe(component)
-        add_to_matrix.extend((r_input.component,
-                              r_input.quantity * quantity / recipe.quantity / efficiency_ratio)
-                             for r_input in recipe.inputs)
-    # Print base components
-    print(f"Base components per unit:")
-    for component in temp_matrix_dict:
-        if component in base_components:
-            print(f"- {temp_matrix_dict[component]} {component}(s)")
-
-    # Print requirements
-    print(f"\nInputs:")
-    for i, component in enumerate(sorted(temp_matrix_dict.keys(),
-                                         key=lambda x: x not in base_components)):
-        if component == end_product:
-            continue
-        prefix = "*" if component in base_components else ""
-        print(f"  {i + 1:2d}. {prefix}{component}:")
-        for built_component in temp_matrix_dict:
-            if built_component in base_components:
-                continue
-            recipe = choose_recipe(built_component)
-            if any(i.component == component for i in recipe.inputs):
-                print(f"      -> {built_component}")
-
-    # Generate input matrix
-    output = []
-    for component, quantity in temp_matrix_dict.items():
-        if component in base_components:
-            continue
-        recipe = choose_recipe(component)
-        output.append((component, quantity, recipe.time, recipe.quantity))
-    return output
-
-
 def print_ratio_matrix(matrix: RatioMatrixType, prefix: str = ""):
     if prefix:
         print(f"\n{prefix} ratio:")
@@ -249,28 +280,30 @@ def main():
     parse_recipes()
 
     # Input
-    end_product = "electronic-circuit"
-    base_components = [
-        # fluid
-        "water", "sulfuric-acid",
-        # chips
-        # "electronic-circuit",
-        # "advanced-circuit",
-        # "processing-unit",
-        # smelted
-        # "iron-plate", "stone-brick", "copper-plate",
-        # "steel-plate", "iron-plate", "stone-brick", "copper-plate",
-        # other
-        "sulfur", "plastic-bar", "concrete",
-    ]
+    end_product = Component.from_name("industrial-furnace")
+    _INPUT_COMPONENTS.update(
+        Component.from_name(c) for c in [
+            # fluid
+            "water",  # "sulfuric-acid",
+            # chips
+            # "electronic-circuit",
+            # "advanced-circuit",
+            "processing-unit",
+            # smelted
+            "iron-plate", "stone-brick", "copper-plate",
+            "steel-plate", "iron-plate", "stone-brick", "copper-plate",
+            # other
+            "sulfur", "plastic-bar", "concrete",
+        ])
+
     assembler_speed = 3.5
     efficiency = 48  # %
     required_output = 45 / 1  # per second
 
     # Create input matrix
     print("\n\n==", end_product, "==")
-    input_matrix = create_input_matrix(end_product, efficiency,
-                                       base_components=base_components)
+    intermediate_inputs = calculate_intermediate_inputs(end_product)
+    print_inputs(intermediate_inputs)
     perfect_ratio_matrix, precision_error = find_best_possible_perfect_ratio(input_matrix)
     # Find perfect ratio
     print_ratio_matrix(perfect_ratio_matrix, prefix="Perfect")
