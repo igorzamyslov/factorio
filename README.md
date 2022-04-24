@@ -6,7 +6,7 @@ Contains useful scripts for factorio
 
 ## Running the scripts
 ```bash
-python <script_name>
+bash <path_to_script>
 ```
 
 ## Getting all the recipes

@@ -2006,7 +2006,6 @@
         "order": "e[electronic-circuit]"
     },
     "electronic-circuit-stone": {
-        "priority": true,
         "name": "electronic-circuit-stone",
         "category": "crafting",
         "products": [
@@ -16979,7 +16978,6 @@
         "order": "r[resource]p[powder]-f"
     },
     "se-iron-smelting-vulcanite": {
-        "priority": true,
         "name": "se-iron-smelting-vulcanite",
         "category": "smelting",
         "products": [
@@ -27588,7 +27586,6 @@
         "order": "b[steel-furnace]"
     },
     "steel-plate": {
-        "priority": true,
         "name": "steel-plate",
         "category": "smelting",
         "products": [
@@ -27638,7 +27635,6 @@
         "order": "a[stone-wall]-c[steel-wall]"
     },
     "stone-brick": {
-        "priority": true,
         "name": "stone-brick",
         "category": "smelting",
         "products": [

@@ -1,6 +1,6 @@
-#!/bin/python3
-""" 
-Script that allows to calculate the required number of 
+#!/usr/bin/env python3
+"""
+Script that allows to calculate the required number of
 the solar panels / accumulators needed to sustain certain power.
 """
 import math
