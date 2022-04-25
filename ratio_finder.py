@@ -147,9 +147,14 @@ def parse_recipes(filename: str = "aai-se-recipes.json"):
         _RECIPES.setdefault(recipe.component, []).append(recipe)
 
 
-def calculate_inputs(end_product: Component) -> List[Input]:
-    """ Calculates intermediate inputs for 1 unit of end product """
-    queue = [Input(component=end_product, quantity=1)]
+def calculate_inputs(end_product: Component, efficiency: float) -> List[Input]:
+    """
+    Calculates intermediate inputs for 1 unit of end product, taking efficiency into account
+    Disclaimer: doesn't take assemblers into account
+                and assumes the same efficiency for every production
+    """
+    efficiency_ratio = (100 + efficiency) / 100
+    queue = [Input(component=end_product, quantity=1 / efficiency_ratio)]
     inputs = []
     while queue:
         input_ = queue.pop()
@@ -159,7 +164,8 @@ def calculate_inputs(end_product: Component) -> List[Input]:
         main_component = input_.component
         if not main_component.is_base_input:
             for sub_input in main_component.recipe.inputs:
-                quantity = input_.quantity / main_component.recipe.quantity * sub_input.quantity
+                quantity = (input_.quantity / main_component.recipe.quantity
+                            * sub_input.quantity / efficiency_ratio)
                 queue.append(Input(component=sub_input.component, quantity=quantity))
 
     # group and sum all inputs
@@ -172,16 +178,6 @@ def calculate_inputs(end_product: Component) -> List[Input]:
         grouped_inputs.append(Input(component=component,
                                     quantity=sum(i.quantity for i in group)))
     return grouped_inputs
-
-
-def recalculate_inputs_with_efficiency(inputs: List[Input], efficiency: float) -> List[Input]:
-    """
-    Recalculate inputs with efficiency
-    Disclaimer: doesn't take assemblers into account
-                and assumes the same efficiency for every production
-    """
-    efficiency_ratio = (100 + efficiency) / 100
-    return [Input(component=i.component, quantity=i.quantity / efficiency_ratio) for i in inputs]
 
 
 def print_inputs(inputs: List[Input]):
@@ -317,10 +313,9 @@ def main():
 
     # Calculate intermediate inputs
     print("\n\n==", end_product, "==")
-    intermediate_inputs = calculate_inputs(end_product)
-    inputs_with_efficiency = recalculate_inputs_with_efficiency(intermediate_inputs, efficiency)
-    print_inputs(inputs_with_efficiency)
-    craftable_inputs = [i for i in inputs_with_efficiency if not i.component.is_base_input]
+    intermediate_inputs = calculate_inputs(end_product, efficiency)
+    print_inputs(intermediate_inputs)
+    craftable_inputs = [i for i in intermediate_inputs if not i.component.is_base_input]
     # Find perfect ratio (optimize precision error)
     assemblers_ratio, precision_error = find_best_possible_ratio(craftable_inputs)
     print_ratios(assemblers_ratio, prefix="Perfect")
