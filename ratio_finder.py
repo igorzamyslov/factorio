@@ -38,6 +38,9 @@ class Component:
     def __lt__(self, other):
         return self.name < other.name
 
+    def __str__(self):
+        return self.name
+
     @property
     def recipe(self) -> Optional[Recipe]:
         """ Component's recipe """
@@ -66,7 +69,7 @@ class Component:
             return chosen_recipe
 
         # Ask the user otherwise
-        print(f"\nChoose which recipe to use to craft \"{self.name}\":")
+        print(f"\nChoose which recipe to use to craft \"{self}\":")
         for i, recipe in enumerate(component_recipes):
             print(f"{i + 1}. {recipe.name}")
         while True:
@@ -144,24 +147,20 @@ def parse_recipes(filename: str = "aai-se-recipes.json"):
         _RECIPES.setdefault(recipe.component, []).append(recipe)
 
 
-def calculate_intermediate_inputs(end_product: Component) -> List[Input]:
+def calculate_inputs(end_product: Component) -> List[Input]:
     """ Calculates intermediate inputs for 1 unit of end product """
-    queue = []
-
-    def _extend_queue(main_input: Input):
-        """ Extend queue with sub-inputs of the given input """
-        main_component = main_input.component
-        if not main_component.is_base_input:
-            for sub_input in main_component.recipe.inputs:
-                quantity = main_input.quantity / main_component.recipe.quantity * sub_input.quantity
-                queue.append(Input(component=sub_input.component, quantity=quantity))
-
-    _extend_queue(Input(component=end_product, quantity=1))
+    queue = [Input(component=end_product, quantity=1)]
     inputs = []
     while queue:
         input_ = queue.pop()
         inputs.append(input_)
-        _extend_queue(input_)
+
+        # Extend queue with sub-inputs of the given input
+        main_component = input_.component
+        if not main_component.is_base_input:
+            for sub_input in main_component.recipe.inputs:
+                quantity = input_.quantity / main_component.recipe.quantity * sub_input.quantity
+                queue.append(Input(component=sub_input.component, quantity=quantity))
 
     # group and sum all inputs
     def group_func(element: Input) -> Component:
@@ -175,40 +174,56 @@ def calculate_intermediate_inputs(end_product: Component) -> List[Input]:
     return grouped_inputs
 
 
+def recalculate_inputs_with_efficiency(inputs: List[Input], efficiency: float) -> List[Input]:
+    """
+    Recalculate inputs with efficiency
+    Disclaimer: doesn't take assemblers into account
+                and assumes the same efficiency for every production
+    """
+    efficiency_ratio = (100 + efficiency) / 100
+    return [Input(component=i.component, quantity=i.quantity / efficiency_ratio) for i in inputs]
+
+
 def print_inputs(inputs: List[Input]):
     """ Print inputs """
     # Print base components
     print(f"\nBase components per unit:")
     for input_ in inputs:
         if input_.component.is_base_input:
-            print(f"- {input_.quantity:.2f} {input_.component.name}")
+            print(f"- {input_.quantity:.2f} {input_.component}")
 
     # Print inputs
     print(f"\nInputs:")
     for i, input_ in enumerate(sorted(inputs, key=lambda i: not i.component.is_base_input)):
         prefix = "*" if input_.component.is_base_input else ""
-        print(f"  {i + 1:2d}. {prefix}{input_.component.name}:")
+        print(f"  {i + 1:2d}. {prefix}{input_.component}:")
         for built_input in inputs:
             if built_input.component.is_base_input:
                 continue
             if any(i.component == input_.component for i in built_input.component.recipe.inputs):
-                print(f"      -> {built_input.component.name}")
+                print(f"      -> {built_input.component}")
 
 
-def find_perfect_ratio(required_outputs: RequiredOutputs,
+def find_perfect_ratio(inputs: List[Input],
                        max_multiplier: int,
                        max_precision_error: float = 0) -> AssemblersRatios:
+    """
+    Find a "perfect ratio" of assemblers,
+    provided that a multiplier shouldn't exceed <max_multiplier>
+    and the accumulated error shouldn't exceed <max_precision_error>
+    """
     # find float number of required assemblers
-    ratio_matrix = [(name, number / output * time)
-                    for name, number, time, output in required_outputs]
     float_assemblers_ratios = {}
-    for component, quantity in required_outputs:
-        recipe = choose_recipe(component)
+    for input_ in inputs:
+        if input_.component in float_assemblers_ratios:
+            raise RuntimeError("Inputs are not grouped by component")
+        recipe = input_.component.recipe
+        float_assemblers_ratios[input_.component] = input_.quantity / recipe.quantity * recipe.time
 
     # find minimum integer numbers of required assemblers
     for i in range(1, max_multiplier + 1):
         accumulated_error = 0
-        for _, ratio in ratio_matrix:
+        for ratio in float_assemblers_ratios.values():
             value = ratio * i
             if value % 1 == 0:
                 continue
@@ -218,12 +233,12 @@ def find_perfect_ratio(required_outputs: RequiredOutputs,
             if accumulated_error > max_precision_error:
                 break
         else:
-            return [(n, math.ceil(r * i)) for n, r in ratio_matrix]
+            return {c: math.ceil(r * i) for c, r in float_assemblers_ratios.items()}
     raise ValueError(f"Not found for precision {max_precision_error}")
 
 
-def find_best_possible_perfect_ratio(input_matrix: InputMatrixType,
-                                     max_multiplier: int = 100) -> Tuple[RatioMatrixType, float]:
+def find_best_possible_ratio(inputs: List[Input],
+                             max_multiplier: int = 100) -> Tuple[AssemblersRatios, float]:
     """
     Find best possible perfect ratio matrix
     by incrementally increasing the allowed precision error
@@ -233,7 +248,7 @@ def find_best_possible_perfect_ratio(input_matrix: InputMatrixType,
     while True:
         try:
             perfect_ratio_matrix = find_perfect_ratio(
-                input_matrix,
+                inputs,
                 max_precision_error=precision_error,
                 max_multiplier=max_multiplier)
         except ValueError:
@@ -243,37 +258,37 @@ def find_best_possible_perfect_ratio(input_matrix: InputMatrixType,
             return perfect_ratio_matrix, precision_error
 
 
-def find_required_ratio(end_product: str, ratio_matrix: RatioMatrixType,
-                        required_output: float, assembler_speed: float,
-                        efficiency: float):
-    current_output = get_product_output(end_product, ratio_matrix,
-                                        assembler_speed, efficiency)
-    multiplier = round(required_output / current_output, 6)
-    return [(n, math.ceil(r * multiplier)) for n, r in ratio_matrix]
-
-
-def get_product_output(component: str, ratio_matrix: RatioMatrixType,
+def get_product_output(component: Component, assemblers_ratios: AssemblersRatios,
                        assembler_speed: float, efficiency: float) -> float:
     """
     Returns output per second of the end product with the given assembler speed
     Disclaimer: Only works with the perfect ratio matrix
     """
-    recipe = choose_recipe(component)
-    ep_assemblers = next(a for n, a in ratio_matrix if n == recipe.component)
+    ep_assemblers = next(a for c, a in assemblers_ratios.items() if c == component)
+    recipe = component.recipe
     output_per_second = ep_assemblers * recipe.quantity / recipe.time * assembler_speed
     # return output per second considering the efficiency
     return output_per_second + output_per_second * efficiency / 100
 
 
-def print_ratio_matrix(matrix: RatioMatrixType, prefix: str = ""):
+def find_required_ratio(end_product: Component, assemblers_ratios: AssemblersRatios,
+                        required_output: float, assembler_speed: float,
+                        efficiency: float) -> AssemblersRatios:
+    current_output = get_product_output(end_product, assemblers_ratios,
+                                        assembler_speed, efficiency)
+    multiplier = round(required_output / current_output, 6)
+    return {c: math.ceil(r * multiplier) for c, r in assemblers_ratios.items()}
+
+
+def print_ratios(assemblers_ratios: AssemblersRatios, prefix: str = ""):
     if prefix:
         print(f"\n{prefix} ratio:")
     else:
         print("\nRatio:")
 
-    for entry in matrix:
-        print("- {}: {}".format(*entry))
-    print(f"Total number of assemblers: {sum(e[1] for e in matrix)}")
+    for component, ratio in assemblers_ratios.items():
+        print("- {}: {}".format(component, ratio))
+    print(f"Total number of assemblers: {sum(assemblers_ratios.values())}")
 
 
 def main():
@@ -300,24 +315,27 @@ def main():
     efficiency = 48  # %
     required_output = 45 / 1  # per second
 
-    # Create input matrix
+    # Calculate intermediate inputs
     print("\n\n==", end_product, "==")
-    intermediate_inputs = calculate_intermediate_inputs(end_product)
-    print_inputs(intermediate_inputs)
-    perfect_ratio_matrix, precision_error = find_best_possible_perfect_ratio(input_matrix)
-    # Find perfect ratio
-    print_ratio_matrix(perfect_ratio_matrix, prefix="Perfect")
+    intermediate_inputs = calculate_inputs(end_product)
+    inputs_with_efficiency = recalculate_inputs_with_efficiency(intermediate_inputs, efficiency)
+    print_inputs(inputs_with_efficiency)
+    craftable_inputs = [i for i in inputs_with_efficiency if not i.component.is_base_input]
+    # Find perfect ratio (optimize precision error)
+    assemblers_ratio, precision_error = find_best_possible_ratio(craftable_inputs)
+    print_ratios(assemblers_ratio, prefix="Perfect")
+    # Print report
     print(f"Precision error: {precision_error:.2f}")
-    output = get_product_output(end_product, perfect_ratio_matrix, assembler_speed, 0)
+    output = get_product_output(end_product, assemblers_ratio, assembler_speed, 0)
     print(f"Output: {output:.1f}/s ({output * 60:.1f}/m)")
-    output = get_product_output(end_product, perfect_ratio_matrix, assembler_speed, efficiency)
+    output = get_product_output(end_product, assemblers_ratio, assembler_speed, efficiency)
     print(f"Output (+efficiency): {output:.1f}/s ({output * 60:.1f}/m)")
 
     # Find required ratio
-    required_ratio_matrix = find_required_ratio(end_product, perfect_ratio_matrix,
+    required_ratio_matrix = find_required_ratio(end_product, assemblers_ratio,
                                                 required_output, assembler_speed,
                                                 efficiency)
-    print_ratio_matrix(required_ratio_matrix, prefix="Required")
+    print_ratios(required_ratio_matrix, prefix="Required")
     print(f"Output: ~{required_output:.1f}/s (~{required_output * 60:.1f}/m)")
     print(f"Output (-efficiency): ~{required_output / (1 + efficiency / 100):.1f}/s")
 
