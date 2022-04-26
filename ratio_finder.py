@@ -8,7 +8,7 @@ import os
 from dataclasses import dataclass
 from functools import lru_cache
 from itertools import groupby
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Tuple
 
 # TODO:
 # [x] Move input to separate file
@@ -26,7 +26,6 @@ from typing import Dict, List, Optional, Set
 
 
 # Globally available data
-_INPUT_COMPONENTS: Set[Component] = set()  # Components that are given as input
 _RECIPES: Dict[Component, List[Recipe]] = {}  # Recipes grouped by their name
 
 
@@ -45,15 +44,6 @@ class Component:
     def recipe(self) -> Optional[Recipe]:
         """ Component's recipe """
         return self._choose_recipe()
-
-    @property
-    def is_base_input(self) -> bool:
-        """
-        Checks whether a component is given as input:
-        - Either it is a base component (which doesn't have its own recipe)
-        - Or the component is marked as input-component
-        """
-        return self in _INPUT_COMPONENTS or self.recipe is None
 
     @lru_cache(maxsize=None)
     def _choose_recipe(self) -> Optional[Recipe]:
@@ -154,7 +144,7 @@ class Pipeline:
     assemblers_speed: float # speed of assemblers in the pipeline
     efficiency: float  # efficiency of the assemblers in the pipeline (%)
     required_output: float  # required output of the pipeline (component per second)
-    # TODO: input_components: List[Component]  # components that are provided as inputs
+    input_components: Tuple[Component, ...]  # components that are provided as inputs
 
     _max_multiplier: int = 100
     _precision_error: Optional[float] = None
@@ -183,7 +173,7 @@ class Pipeline:
 
             # Extend queue with sub-inputs of the given input
             main_component = input_.component
-            if not main_component.is_base_input:
+            if not self.is_base_input(main_component):
                 for sub_input in main_component.recipe.inputs:
                     quantity = (input_.quantity / main_component.recipe.quantity
                                 * sub_input.quantity / efficiency_ratio)
@@ -200,10 +190,23 @@ class Pipeline:
                                         quantity=sum(i.quantity for i in group)))
         return grouped_inputs
 
+    def is_base_input(self, component: Component) -> bool:
+        """
+        Checks whether a component is given as input:
+        - Either it is a base component (which doesn't have its own recipe)
+        - Or the component is marked as input-component
+        """
+        return component in self.input_components or component.recipe is None
+
     @property
     @lru_cache()
     def craftable_inputs(self):
-        return [i for i in self.inputs if not i.component.is_base_input]
+        return [i for i in self.inputs if not self.is_base_input(i.component)]
+
+    @property
+    @lru_cache()
+    def base_inputs(self):
+        return [i for i in self.inputs if self.is_base_input(i.component)]
 
     def _find_best_assemblers_ratio(self, max_precision_error: float):
         """
@@ -277,25 +280,24 @@ class Pipeline:
         # return output per second considering the efficiency
         return output_per_second + output_per_second * efficiency / 100
 
-
-def print_inputs(inputs: List[Input]):
-    """ Print inputs """
-    # Print base components
-    print(f"\nBase components per unit:")
-    for input_ in inputs:
-        if input_.component.is_base_input:
+    def print_inputs(self):
+        """ Print inputs """
+        # Print base components
+        print(f"\nBase components per unit:")
+        for input_ in self.craftable_inputs:
             print(f"- {input_.quantity:.2f} {input_.component}")
 
-    # Print inputs
-    print(f"\nInputs:")
-    for i, input_ in enumerate(sorted(inputs, key=lambda i: not i.component.is_base_input)):
-        prefix = "*" if input_.component.is_base_input else ""
-        print(f"  {i + 1:2d}. {prefix}{input_.component}:")
-        for built_input in inputs:
-            if built_input.component.is_base_input:
-                continue
-            if any(i.component == input_.component for i in built_input.component.recipe.inputs):
-                print(f"      -> {built_input.component}")
+        # Print inputs
+        print(f"\nInputs:")
+        prefixed_inputs = []
+        prefixed_inputs.extend(("*", i) for i in self.base_inputs)
+        prefixed_inputs.extend(("", i) for i in self.craftable_inputs)
+        for i, (prefix, input_) in enumerate(prefixed_inputs):
+            print(f"  {i + 1:2d}. {prefix}{input_.component}:")
+            for craftable_input in self.craftable_inputs:
+                if any(i.component == input_.component
+                       for i in craftable_input.component.recipe.inputs):
+                    print(f"      -> {craftable_input.component}")
 
 
 def print_ratios(assemblers_ratios: AssemblersRatios, prefix: str = ""):
@@ -312,7 +314,7 @@ def print_ratios(assemblers_ratios: AssemblersRatios, prefix: str = ""):
 def main():
     Recipe.parse_recipes_data()
 
-    _INPUT_COMPONENTS.update(
+    input_components = tuple(
         Component.from_name(c) for c in [
             # fluid
             "water",  # "sulfuric-acid",
@@ -329,10 +331,11 @@ def main():
     pipeline = Pipeline(component=Component.from_name("industrial-furnace"),
                         assemblers_speed=3.5,
                         efficiency=48,
-                        required_output=45)
+                        required_output=45,
+                        input_components=input_components)
     # Calculate intermediate inputs
     print("\n\n==", pipeline.component, "==")
-    print_inputs(pipeline.inputs)
+    pipeline.print_inputs()
     print_ratios(pipeline.best_assemblers_ratio, prefix="Best")
     print(f"Precision error: {pipeline.precision_error:.2f}")
     # Report best assemblers ratio
