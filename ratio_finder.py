@@ -336,9 +336,9 @@ def main():
     # Calculate intermediate inputs
     print("\n\n==", pipeline.component, "==")
     pipeline.print_inputs()
+    # Report best assemblers ratio
     print_ratios(pipeline.best_assemblers_ratio, prefix="Best")
     print(f"Precision error: {pipeline.precision_error:.2f}")
-    # Report best assemblers ratio
     output = pipeline.get_product_output(pipeline.component,
                                          pipeline.best_assemblers_ratio,
                                          efficiency=0)
