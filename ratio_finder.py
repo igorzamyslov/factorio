@@ -14,6 +14,7 @@ from typing import Dict, List, Optional, Tuple
 # [x] Move input to separate file
 # [x] Populate the input file automatically
 # [x] Handling items with multiple recipes (asking user to choose)
+# [x] Handling items with probability (right now skipped)
 # [ ] Make a better user-interface (run the script via user input)
 # [ ] Add docstrings + check with pylint
 # [ ] Handle different assemblers with their own efficiency / speed
@@ -21,7 +22,7 @@ from typing import Dict, List, Optional, Tuple
 #     [ ] minimise either error OR number of assemblers
 #     [ ] provide all possible combinations of assemblers
 #     [ ] use better algorithm to find equation solution
-# [ ] Handling items with probability (right now skipped)
+# [ ] Better handling of recipes with multiple products (right now no report about artifacts)
 # [ ] Draw directed graph of inputs (visjs or python library)
 
 
@@ -99,39 +100,36 @@ class Recipe:
     name: str  # name of the recipe
     component: Component  # name of the output component
     time: float  # seconds
-    quantity: int
+    quantity: float
+    probability: float  # [0;1]
     inputs: List[Input]
 
+    @property
+    def average_quantity(self):
+        """ Quantity which takes probability into account """
+        return self.quantity * self.probability
+
     @staticmethod
-    def parse_recipes_data(filename: str = "aai-se-recipes.json"):
-        """
-        Parses the recipes file and initialises the RECIPES and BASE_COMPONENTS dictionaries.
-
-        Disclaimer:
-            1. Skips the recipes with multiple outputs or outputs with probability other than 0.
-            2. Updates global dictionaries.
-        """
-
+    def parse_recipes_data(filename: str):
+        """ Parses the recipes file and initialises the global _RECIPES dictionary. """
         with open(os.path.join("recipes", filename), "r") as f:
             data = json.load(f)
 
         for recipe_data in data.values():
-            # skip multi-products recipes
-            if len(recipe_data["products"]) != 1:
-                continue
-            # skip <1 probability recipes
-            [component_data] = recipe_data["products"]
-            if component_data["probability"] != 1:
-                continue
-
-            recipe = Recipe(name=recipe_data["name"],
-                            time=recipe_data["energy"],
-                            component=Component.from_name(component_data["name"]),
-                            quantity=component_data["amount"],
-                            inputs=[Input(component=Component.from_name(i["name"]),
-                                          quantity=i["amount"])
-                                    for i in recipe_data["ingredients"]])
-            _RECIPES.setdefault(recipe.component, []).append(recipe)
+            for product_data in recipe_data["products"]:
+                if "amount" not in product_data:
+                    # calculate amount based on the average between max and min
+                    product_data["amount"] = \
+                        (product_data["amount_max"] + product_data["amount_min"]) / 2
+                recipe = Recipe(name=recipe_data["name"],
+                                time=recipe_data["energy"],
+                                component=Component.from_name(product_data["name"]),
+                                quantity=product_data["amount"],
+                                probability=product_data["probability"],
+                                inputs=[Input(component=Component.from_name(i["name"]),
+                                              quantity=i["amount"])
+                                        for i in recipe_data["ingredients"]])
+                _RECIPES.setdefault(recipe.component, []).append(recipe)
 
 
 AssemblersRatios = Dict[Component, float]
@@ -175,7 +173,7 @@ class Pipeline:
             main_component = input_.component
             if not self.is_base_input(main_component):
                 for sub_input in main_component.recipe.inputs:
-                    quantity = (input_.quantity / main_component.recipe.quantity
+                    quantity = (input_.quantity / main_component.recipe.average_quantity
                                 * sub_input.quantity / efficiency_ratio)
                     queue.append(Input(component=sub_input.component, quantity=quantity))
 
@@ -220,7 +218,13 @@ class Pipeline:
             if input_.component in float_assemblers_ratios:
                 raise RuntimeError("Inputs are not grouped by component")
             recipe = input_.component.recipe
-            float_assemblers_ratios[input_.component] = input_.quantity / recipe.quantity * recipe.time
+            if len(self.craftable_inputs) == 1:
+                # special case when there's no need to balance anything,
+                # there's just one craftable
+                ratio = 1
+            else:
+                ratio = input_.quantity / recipe.average_quantity * recipe.time
+            float_assemblers_ratios[input_.component] = ratio
 
         # find minimum integer numbers of required assemblers
         for i in range(1, self._max_multiplier + 1):
@@ -276,7 +280,8 @@ class Pipeline:
             efficiency = self.efficiency
         n_assemblers = next(a for c, a in assemblers_ratios.items() if c == component)
         recipe = component.recipe
-        output_per_second = n_assemblers * recipe.quantity / recipe.time * self.assemblers_speed
+        output_per_second = (n_assemblers * recipe.average_quantity
+                             / recipe.time * self.assemblers_speed)
         # return output per second considering the efficiency
         return output_per_second + output_per_second * efficiency / 100
 
@@ -284,7 +289,7 @@ class Pipeline:
         """ Print inputs """
         # Print base components
         print(f"\nBase components per unit:")
-        for input_ in self.craftable_inputs:
+        for input_ in self.base_inputs:
             print(f"- {input_.quantity:.2f} {input_.component}")
 
         # Print inputs
@@ -293,6 +298,8 @@ class Pipeline:
         prefixed_inputs.extend(("*", i) for i in self.base_inputs)
         prefixed_inputs.extend(("", i) for i in self.craftable_inputs)
         for i, (prefix, input_) in enumerate(prefixed_inputs):
+            if input_.component == self.component:
+                continue
             print(f"  {i + 1:2d}. {prefix}{input_.component}:")
             for craftable_input in self.craftable_inputs:
                 if any(i.component == input_.component
@@ -312,7 +319,7 @@ def print_ratios(assemblers_ratios: AssemblersRatios, prefix: str = ""):
 
 
 def main():
-    Recipe.parse_recipes_data()
+    Recipe.parse_recipes_data("aai-se-recipes.json")
 
     input_components = tuple(
         Component.from_name(c) for c in [
@@ -325,16 +332,19 @@ def main():
             # smelted
             "iron-plate", "stone-brick", "copper-plate",
             "steel-plate", "iron-plate", "stone-brick", "copper-plate",
+            # ores
+            "uranium-ore",
             # other
             "sulfur", "plastic-bar", "concrete",
         ])
-    pipeline = Pipeline(component=Component.from_name("industrial-furnace"),
+    pipeline = Pipeline(component=Component.from_name("uranium-238"),
                         assemblers_speed=3.5,
                         efficiency=48,
                         required_output=45,
                         input_components=input_components)
-    # Calculate intermediate inputs
+    # Generate report
     print("\n\n==", pipeline.component, "==")
+    print(pipeline.inputs)
     pipeline.print_inputs()
     # Report best assemblers ratio
     print_ratios(pipeline.best_assemblers_ratio, prefix="Best")
