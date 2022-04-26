@@ -8,7 +8,7 @@ import os
 from dataclasses import dataclass
 from functools import lru_cache
 from itertools import groupby
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 # TODO:
 # [x] Move input to separate file
@@ -18,6 +18,7 @@ from typing import Dict, List, Optional, Tuple
 # [ ] Make a better user-interface (run the script via user input)
 # [ ] Add docstrings + check with pylint
 # [ ] Handle different assemblers with their own efficiency / speed
+# [ ] Handle recipes with recursion (e.g. a component is present in both inputs and outputs)
 # [ ] Update algorithm to be able to
 #     [ ] minimise either error OR number of assemblers
 #     [ ] provide all possible combinations of assemblers
@@ -53,26 +54,36 @@ class Component:
         if self not in _RECIPES:
             return None
 
-        component_recipes = _RECIPES[self]
-        # Check if there's only one recipe
-        if len(component_recipes) == 1:
-            [chosen_recipe] = component_recipes
-            return chosen_recipe
-
-        # Ask the user otherwise
+        # Ask the user which recipe to use / or mark the component as input
+        component_recipes: List[Optional[Recipe]] = _RECIPES[self].copy()
+        component_recipes.insert(0, None)
         print(f"\nChoose which recipe to use to craft \"{self}\":")
         for i, recipe in enumerate(component_recipes):
-            print(f"{i + 1}. {recipe.name}")
+            print(f"{i}. {recipe.name if recipe else 'None: mark as input component'}")
         while True:
             try:
                 recipe_to_use = int(input("Recipe to use: "))
-                if recipe_to_use < 1 or recipe_to_use > len(component_recipes):
+                if recipe_to_use < 0 or recipe_to_use > len(component_recipes) - 1:
                     raise ValueError
             except (TypeError, ValueError):
-                print(f"Please enter a number between 1 and {len(component_recipes)}")
+                print(f"Please enter a number between 0 and {len(component_recipes) - 1}")
                 continue
             else:
-                return component_recipes[recipe_to_use - 1]
+                return component_recipes[recipe_to_use]
+
+    def choose_all_relevant_recipes(self) -> Set[Component]:
+        """
+        Go through the components recursively and for every one of them:
+        either choose a recipe or mark as a base component.
+        Return a list of components marked as base.
+        """
+        base_components = set()
+        if self.recipe is None:
+            base_components.add(self)
+        else:
+            for input_ in self.recipe.inputs:
+                base_components.update(input_.component.choose_all_relevant_recipes())
+        return base_components
 
     @classmethod
     @lru_cache(maxsize=None)
@@ -320,31 +331,16 @@ def print_ratios(assemblers_ratios: AssemblersRatios, prefix: str = ""):
 
 def main():
     Recipe.parse_recipes_data("aai-se-recipes.json")
+    end_product = Component.from_name("petroleum-gas")
+    input_components = end_product.choose_all_relevant_recipes()
 
-    input_components = tuple(
-        Component.from_name(c) for c in [
-            # fluid
-            "water",  # "sulfuric-acid",
-            # chips
-            # "electronic-circuit",
-            # "advanced-circuit",
-            "processing-unit",
-            # smelted
-            "iron-plate", "stone-brick", "copper-plate",
-            "steel-plate", "iron-plate", "stone-brick", "copper-plate",
-            # ores
-            "uranium-ore",
-            # other
-            "sulfur", "plastic-bar", "concrete",
-        ])
-    pipeline = Pipeline(component=Component.from_name("uranium-238"),
+    pipeline = Pipeline(component=end_product,
                         assemblers_speed=3.5,
                         efficiency=48,
                         required_output=45,
-                        input_components=input_components)
+                        input_components=tuple(input_components))
     # Generate report
     print("\n\n==", pipeline.component, "==")
-    print(pipeline.inputs)
     pipeline.print_inputs()
     # Report best assemblers ratio
     print_ratios(pipeline.best_assemblers_ratio, prefix="Best")
