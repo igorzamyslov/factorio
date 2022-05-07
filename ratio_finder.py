@@ -123,10 +123,10 @@ class Recipe:
     @staticmethod
     def parse_recipes_data(filename: str):
         """ Parses the recipes file and initialises the global _RECIPES dictionary. """
-        with open(os.path.join("recipes", filename), "r") as f:
+        with open(os.path.join("game_data", filename), "r") as f:
             data = json.load(f)
 
-        for recipe_data in data.values():
+        for recipe_data in data["recipe"].values():
             for product_data in recipe_data["products"]:
                 if "amount" not in product_data:
                     # calculate amount based on the average between max and min
@@ -330,13 +330,13 @@ def print_ratios(assemblers_ratios: AssemblersRatios, prefix: str = ""):
 
 
 def main():
-    Recipe.parse_recipes_data("aai-se-recipes.json")
-    end_product = Component.from_name("petroleum-gas")
+    Recipe.parse_recipes_data("space_exploration.json")
+    end_product = Component.from_name("se-beryllium-plate")
     input_components = end_product.choose_all_relevant_recipes()
 
     pipeline = Pipeline(component=end_product,
-                        assemblers_speed=3.5,
-                        efficiency=48,
+                        assemblers_speed=1,
+                        efficiency=0,
                         required_output=45,
                         input_components=tuple(input_components))
     # Generate report

@@ -1,20 +1,24 @@
-# factorio scripts
+# Factorio scripts
+
 Contains useful scripts for factorio
 
+
 ## Requirements
+
 - Python 3.7
 
+
 ## Running the scripts
+
 ```bash
 bash <path_to_script>
 ```
 
-## Getting all the recipes
-Paste and run the contents of the **dump_recipes.lua** 
-from https://github.com/jmurrayufo/factorio/tree/master/dump_recipes 
-in the factorio console.
 
-The file will be available under `%APPDATA%\Factorio\script-output` (file: `recipe`)
+## Obtaining your own game data
 
-It is possible to set priority on every recipe by adding `priority: true`.
-It can be relevant when one item can be crafted in multiple ways.
+Game data is obtained using the mod "Data Exporter to JSON"
+
+1. Install the mod
+2. Start new game
+3. Game data is created under `%APPDATA%\Factorio\script-output\recipe-lister`
